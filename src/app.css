@@ -165,3 +165,16 @@ input[type="color"] {
 .plugin-readme .markdown-alert-caution > .markdown-alert-title {
 	color: #e5534b;
 }
+
+.device-fade-x {
+	mask-image: linear-gradient(to right, transparent, black 7.5rem, black calc(100% - 7.5rem), transparent);
+}
+.device-fade-y {
+	mask-image: linear-gradient(to bottom, transparent, black 7.5rem, black calc(100% - 7.5rem), transparent);
+}
+.device-fade-xy {
+	mask-image:
+		linear-gradient(to right, transparent, black 7.5rem, black calc(100% - 7.5rem), transparent),
+		linear-gradient(to bottom, transparent, black 7.5rem, black calc(100% - 7.5rem), transparent);
+	mask-composite: intersect;
+}

@@ -248,18 +248,3 @@
 		</div>
 	</div>
 {/key}
-
-<style>
-	.device-fade-x {
-		mask-image: linear-gradient(to right, transparent, black 7.5rem, black calc(100% - 7.5rem), transparent);
-	}
-	.device-fade-y {
-		mask-image: linear-gradient(to bottom, transparent, black 7.5rem, black calc(100% - 7.5rem), transparent);
-	}
-	.device-fade-xy {
-		mask-image:
-			linear-gradient(to right, transparent, black 7.5rem, black calc(100% - 7.5rem), transparent),
-			linear-gradient(to bottom, transparent, black 7.5rem, black calc(100% - 7.5rem), transparent);
-		mask-composite: intersect;
-	}
-</style>

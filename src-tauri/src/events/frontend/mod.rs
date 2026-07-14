@@ -146,6 +146,7 @@ pub struct WindowInfo {
 enum DesktopEnvironment {
 	Hyprland,
 	Kde,
+	Gnome,
 	X11,
 	Unknown,
 }
@@ -158,6 +159,9 @@ impl DesktopEnvironment {
 		let desktop = std::env::var("XDG_CURRENT_DESKTOP").unwrap_or_default().to_lowercase();
 		if desktop.contains("kde") {
 			return Self::Kde;
+		}
+		if desktop.contains("gnome") {
+			return Self::Gnome;
 		}
 		let session_type = std::env::var("XDG_SESSION_TYPE").unwrap_or_default().to_lowercase();
 		if session_type == "x11" || std::env::var("DISPLAY").is_ok() {
@@ -209,6 +213,43 @@ fn get_windows_kde() -> Vec<WindowInfo> {
 	windows
 }
 
+fn get_windows_gnome() -> Vec<WindowInfo> {
+	let mut windows = Vec::new();
+	if let Ok(output) = std::process::Command::new("gdbus")
+		.args([
+			"call",
+			"--session",
+			"--dest",
+			"org.gnome.Shell",
+			"--object-path",
+			"/org/gnome/Shell/Extensions/Windows",
+			"--method",
+			"org.gnome.Shell.Extensions.Windows.List",
+		])
+		.output()
+	{
+		if let Ok(stdout) = String::from_utf8(output.stdout) {
+			if let Some(start) = stdout.find('[') {
+				if let Some(end) = stdout.rfind(']') {
+					let json_str = stdout[start..=end].replace("\\\"", "\"").replace("\\'", "'");
+					if let Ok(json) = serde_json::from_str::<serde_json::Value>(&json_str) {
+						if let Some(arr) = json.as_array() {
+							for w in arr {
+								let title = w.get("title").and_then(|v| v.as_str()).unwrap_or_default().to_owned();
+								let class = w.get("wm_class").or(w.get("class")).and_then(|v| v.as_str()).unwrap_or_default().to_owned();
+								if !class.is_empty() {
+									windows.push(WindowInfo { title, class });
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+	windows
+}
+
 fn get_windows_x11() -> Vec<WindowInfo> {
 	let mut windows = Vec::new();
 	if let Ok(output) = std::process::Command::new("wmctrl").args(["-l", "-x"]).output() {
@@ -250,6 +291,7 @@ pub async fn get_open_windows() -> Vec<WindowInfo> {
 	match DesktopEnvironment::detect() {
 		DesktopEnvironment::Hyprland => get_windows_hyprland(),
 		DesktopEnvironment::Kde => get_windows_kde(),
+		DesktopEnvironment::Gnome => get_windows_gnome(),
 		DesktopEnvironment::X11 => get_windows_x11(),
 		DesktopEnvironment::Unknown => Vec::new(),
 	}

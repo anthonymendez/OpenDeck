@@ -73,6 +73,8 @@ async fn main() {
 			frontend::get_categories,
 			frontend::get_localisations,
 			frontend::get_applications,
+			frontend::add_application,
+			frontend::get_open_windows,
 			frontend::get_application_profiles,
 			frontend::set_application_profiles,
 			frontend::get_fonts,

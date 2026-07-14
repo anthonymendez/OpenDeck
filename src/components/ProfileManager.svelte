@@ -2,7 +2,6 @@
 	import type { DeviceInfo } from "$lib/DeviceInfo";
 	import type { Profile } from "$lib/Profile";
 
-	import Browsers from "phosphor-svelte/lib/Browsers";
 	import Copy from "phosphor-svelte/lib/Copy";
 	import FloppyDisk from "phosphor-svelte/lib/FloppyDisk";
 	import Pencil from "phosphor-svelte/lib/Pencil";
@@ -14,7 +13,7 @@
 
 	import { invoke } from "@tauri-apps/api/core";
 	import { listen } from "@tauri-apps/api/event";
-	import { message } from "@tauri-apps/plugin-dialog";
+	import { message, open } from "@tauri-apps/plugin-dialog";
 
 	let folders: { [name: string]: string[] } = {};
 	let value: string;
@@ -154,30 +153,84 @@
 	let showPopup: boolean = false;
 	let nameInput: HTMLInputElement;
 
-	let showApplicationManager: boolean = false;
 	let applications: string[];
 	let applicationProfiles: { [appName: string]: { [device: string]: string } };
+	let openWindows: { title: string; class: string }[] = [];
 	(async () => {
 		applications = await invoke("get_applications");
 		applicationProfiles = await invoke("get_application_profiles");
+		try {
+			openWindows = await invoke("get_open_windows");
+		} catch (e) {
+			console.error("Failed to query open windows", e);
+		}
 	})();
 	listen("applications", ({ payload }: { payload: string[] }) => (applications = payload));
-	let applicationsAddAppName: string = "opendeck_select_application";
-	let applicationsAddProfile: string = "opendeck_select_profile";
-	$: {
-		if (applicationsAddAppName != "opendeck_select_application" && applicationsAddProfile != "opendeck_select_profile") {
-			applicationProfiles[applicationsAddAppName] ||= {};
-			applicationProfiles[applicationsAddAppName][device.id] = applicationsAddProfile;
-			applicationsAddAppName = "opendeck_select_application";
-			applicationsAddProfile = "opendeck_select_profile";
-		}
-	}
+
 	$: {
 		if (applicationProfiles) {
 			applicationProfiles = Object.fromEntries(
 				Object.entries(applicationProfiles).filter(([_, devices]) => Object.values(devices).filter((v) => v).length != 0),
 			);
 			invoke("set_application_profiles", { value: applicationProfiles });
+		}
+	}
+
+	function getFilteredOpenWindows(wins: { title: string; class: string }[], activeApps: string[]) {
+		const seen = new Set(activeApps || []);
+		const filtered: { title: string; class: string }[] = [];
+		for (const w of wins || []) {
+			if (!seen.has(w.class)) {
+				seen.add(w.class);
+				filtered.push(w);
+			}
+		}
+		return filtered.sort((a, b) => a.class.localeCompare(b.class));
+	}
+
+	function getAppForProfile(profileId: string): string {
+		if (!applicationProfiles) return "";
+		for (const [appName, devices] of Object.entries(applicationProfiles)) {
+			if (devices[device.id] === profileId) {
+				return appName;
+			}
+		}
+		return "";
+	}
+
+	function setAppForProfile(profileId: string, appName: string) {
+		if (!applicationProfiles) return;
+		for (const app of Object.keys(applicationProfiles)) {
+			if (applicationProfiles[app][device.id] === profileId) {
+				delete applicationProfiles[app][device.id];
+			}
+		}
+		if (appName) {
+			applicationProfiles[appName] ||= {};
+			applicationProfiles[appName][device.id] = profileId;
+		}
+		applicationProfiles = { ...applicationProfiles };
+	}
+
+	async function handleAppChange(profileId: string, val: string) {
+		if (val === "opendeck_choose_app") {
+			const path = await open({ multiple: false, directory: false });
+			if (!path) {
+				applicationProfiles = { ...applicationProfiles };
+				return;
+			}
+			const appName = path.split(/[\/\\]/).at(-1) ?? path;
+			if (!applications.includes(appName)) {
+				applications = [...applications, appName];
+				await invoke("add_application", { appName });
+			}
+			setAppForProfile(profileId, appName);
+		} else {
+			if (val && val !== "opendeck_default" && !applications.includes(val)) {
+				applications = [...applications, val];
+				await invoke("add_application", { appName: val });
+			}
+			setAppForProfile(profileId, val);
 		}
 	}
 
@@ -212,8 +265,7 @@
 <svelte:window
 	on:keydown={(event) => {
 		if (event.key == "Escape") {
-			if (showApplicationManager) showApplicationManager = false;
-			else if (renamingProfile) renamingProfile = null;
+			if (renamingProfile) renamingProfile = null;
 			else showPopup = false;
 		}
 	}}
@@ -243,14 +295,6 @@
 			class="px-4 text-neutral-300 bg-neutral-900 hover:bg-neutral-800 transition-colors border-r border-y border-neutral-600 rounded-r-lg"
 		>
 			{$t("profile_manager.create")}
-		</button>
-
-		<button
-			class="ml-2 px-4 flex items-center text-neutral-300 bg-neutral-900 hover:bg-neutral-800 transition-colors border border-neutral-600 rounded-lg"
-			on:click={() => (showApplicationManager = true)}
-			aria-label={$t("profile_manager.application_profiles")}
-		>
-			<Browsers size={24} />
 		</button>
 	</div>
 
@@ -286,6 +330,33 @@
 						</button>
 					{:else}
 						<label class="grow text-neutral-400" for={`profile-${encodeURIComponent(profile)}`}>{id ? profile.split("/")[1] : profile}</label>
+						<div class="select-wrapper text-xs w-48">
+							<select
+								value={getAppForProfile(profile)}
+								on:change={(e) => handleAppChange(profile, e.currentTarget.value)}
+								aria-label={$t("profile_manager.smart_profile.label")}
+								class="w-full"
+							>
+								<option value="">{$t("profile_manager.smart_profile.none")}</option>
+								<option value="opendeck_default">{$t("profile_manager.default_profile")}</option>
+								{#if applications && applications.length > 0}
+									<optgroup label="Recently Active">
+										{#each [...applications].sort() as appName}
+											<option value={appName}>{appName}</option>
+										{/each}
+									</optgroup>
+								{/if}
+								{#if openWindows && openWindows.length > 0}
+									<optgroup label="Currently Open">
+										{#each getFilteredOpenWindows(openWindows, applications) as win}
+											<option value={win.class}>{win.title ? `${win.title.slice(0, 30)}${win.title.length > 30 ? '...' : ''} (${win.class})` : win.class}</option>
+										{/each}
+									</optgroup>
+								{/if}
+								<option disabled>──────────</option>
+								<option value="opendeck_choose_app">{$t("profile_manager.smart_profile.choose")}</option>
+							</select>
+						</div>
 						<button on:click={() => duplicateProfile(profile)} title={$t("profile_manager.duplicate")} aria-label={$t("profile_manager.duplicate")}>
 							<Copy size="20" class="text-neutral-400" />
 						</button>
@@ -304,80 +375,3 @@
 	</div>
 </Popup>
 
-<Popup show={showApplicationManager} label={$t("profile_manager.application_profiles")}>
-	<button class="mr-1 float-right text-xl text-neutral-300" on:click={() => (showApplicationManager = false)} aria-label={$t("settings.close")}>✕</button>
-	<h2 class="text-xl font-semibold text-neutral-300">{device.name}</h2>
-	<span class="text-sm text-neutral-400">{$t("profile_manager.application_profiles.hint.1")}</span>
-	<span class="text-sm text-neutral-400">{$t("profile_manager.application_profiles.hint.2")}</span>
-
-	<table class="w-full text-neutral-300 divide-y divide-neutral-500!">
-		{#each Object.entries(applicationProfiles).sort( (a, b) => (a[0] == "opendeck_default" ? -1 : b[0] == "opendeck_default" ? 1 : a[0].localeCompare(b[0])), ) as [appName, devices]}
-			{#if devices[device.id]}
-				<tr class="h-12">
-					<td>{appName == "opendeck_default" ? $t("profile_manager.default_profile") : appName}:</td>
-					<td class="select-wrapper">
-						<select
-							bind:value={applicationProfiles[appName][device.id]}
-							class="w-full"
-							aria-label={$t("profile_manager.application_profiles.aria", {
-								name: appName == "opendeck_default" ? $t("profile_manager.default_profile") : appName,
-							})}
-						>
-							{#each Object.entries(folders) as [id, profiles]}
-								{#if id && profiles.length}
-									<optgroup label={id}>
-										{#each profiles as profile}
-											<option value={profile}>{profile.split("/")[1]}</option>
-										{/each}
-									</optgroup>
-								{:else}
-									{#each profiles as profile}
-										<option value={profile}>{profile}</option>
-									{/each}
-								{/if}
-							{/each}
-							<option disabled>──────────</option>
-							<option value={undefined}>{$t("profile_manager.remove_application")}</option>
-						</select>
-					</td>
-				</tr>
-			{/if}
-		{/each}
-		<tr class="h-12">
-			<td class="w-48 select-wrapper">
-				<select bind:value={applicationsAddAppName} class="w-full" aria-label={$t("profile_manager.select_application")}>
-					<option selected disabled value="opendeck_select_application">{$t("profile_manager.select_application.placeholder")}</option>
-					{#if !applicationProfiles["opendeck_default"] || !applicationProfiles["opendeck_default"][device.id]}
-						<option value="opendeck_default">{$t("profile_manager.default_profile")}</option>
-						{#if applications.filter((appName) => !applicationProfiles[appName] || !applicationProfiles[appName][device.id]).length > 0}
-							<option disabled>──────────</option>
-						{/if}
-					{/if}
-					{#each applications as appName}
-						{#if !applicationProfiles[appName] || !applicationProfiles[appName][device.id]}
-							<option value={appName}>{appName}</option>
-						{/if}
-					{/each}
-				</select>
-			</td>
-			<td class="w-96 select-wrapper">
-				<select bind:value={applicationsAddProfile} class="w-full" aria-label={$t("profile_manager.select_profile")}>
-					<option selected disabled value="opendeck_select_profile">{$t("profile_manager.select_profile.placeholder")}</option>
-					{#each Object.entries(folders) as [id, profiles]}
-						{#if id && profiles.length}
-							<optgroup label={id}>
-								{#each profiles as profile}
-									<option value={profile}>{profile.split("/")[1]}</option>
-								{/each}
-							</optgroup>
-						{:else}
-							{#each profiles as profile}
-								<option value={profile}>{profile}</option>
-							{/each}
-						{/if}
-					{/each}
-				</select>
-			</td>
-		</tr>
-	</table>
-</Popup>

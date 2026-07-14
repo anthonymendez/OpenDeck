@@ -349,7 +349,9 @@
 								{#if openWindows && openWindows.length > 0}
 									<optgroup label="Currently Open">
 										{#each getFilteredOpenWindows(openWindows, applications) as win}
-											<option value={win.class}>{win.title ? `${win.title.slice(0, 30)}${win.title.length > 30 ? '...' : ''} (${win.class})` : win.class}</option>
+											<option value={win.class}
+												>{win.title ? `${win.title.slice(0, 30)}${win.title.length > 30 ? "..." : ""} (${win.class})` : win.class}</option
+											>
 										{/each}
 									</optgroup>
 								{/if}
@@ -374,4 +376,3 @@
 		{/each}
 	</div>
 </Popup>
-

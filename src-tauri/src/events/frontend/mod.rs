@@ -1,3 +1,4 @@
+#![allow(clippy::collapsible_if)]
 pub mod instances;
 pub mod plugins;
 pub mod profiles;
@@ -258,7 +259,7 @@ fn get_windows_x11() -> Vec<WindowInfo> {
 				let parts: Vec<&str> = line.split_whitespace().collect();
 				if parts.len() >= 4 {
 					let class_part = parts[2];
-					let class = class_part.split('.').last().unwrap_or(class_part).to_owned();
+					let class = class_part.split('.').next_back().unwrap_or(class_part).to_owned();
 					let title = parts[3..].join(" ");
 					if !class.is_empty() {
 						windows.push(WindowInfo { title, class });

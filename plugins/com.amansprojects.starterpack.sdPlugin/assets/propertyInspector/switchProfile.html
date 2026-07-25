@@ -17,13 +17,57 @@
 				};
 
 				const device = document.getElementById("device");
-				device.value = inActionInfo.payload.settings.device ?? inActionInfo.device;
 				const profile = document.getElementById("profile");
-				profile.value = inActionInfo.payload.settings.profile ?? "Default";
 				const anticlockwise = document.getElementById("anticlockwise");
-				anticlockwise.value = inActionInfo.payload.settings.anticlockwise ?? "Default";
 				const clockwise = document.getElementById("clockwise");
-				clockwise.value = inActionInfo.payload.settings.clockwise ?? "Default";
+
+				let storedProfilesMap = {};
+
+				function populateSelect(selectElement, values, currentValue) {
+					selectElement.innerHTML = "";
+					const items = Array.from(new Set(values));
+					if (currentValue && !items.includes(currentValue)) {
+						items.push(currentValue);
+					}
+					for (const val of items) {
+						selectElement.appendChild(new Option(val, val, false, val === currentValue));
+					}
+					selectElement.value = currentValue ?? items[0] ?? "";
+				}
+
+				function updateDeviceSelect(devicesList) {
+					const currentDev = device.value || (inActionInfo.payload.settings.device ?? inActionInfo.device);
+					populateSelect(device, devicesList, currentDev);
+				}
+
+				function getAvailableProfiles(targetDevice) {
+					if (targetDevice && storedProfilesMap[targetDevice]) {
+						return storedProfilesMap[targetDevice];
+					}
+					const allProfiles = Object.values(storedProfilesMap).flat();
+					return allProfiles.length > 0 ? allProfiles : ["Default"];
+				}
+
+				function populateAllProfiles() {
+					const targetDevice = device.value || inActionInfo.device;
+					const profilesList = getAvailableProfiles(targetDevice);
+
+					const currentProfile = profile.dataset.savedValue ?? (inActionInfo.payload.settings.profile ?? "Default");
+					const currentAnti = anticlockwise.dataset.savedValue ?? (inActionInfo.payload.settings.anticlockwise ?? "Default");
+					const currentClock = clockwise.dataset.savedValue ?? (inActionInfo.payload.settings.clockwise ?? "Default");
+
+					populateSelect(profile, profilesList, currentProfile);
+					populateSelect(anticlockwise, profilesList, currentAnti);
+					populateSelect(clockwise, profilesList, currentClock);
+				}
+
+				updateDeviceSelect([]);
+
+				profile.dataset.savedValue = inActionInfo.payload.settings.profile ?? "Default";
+				anticlockwise.dataset.savedValue = inActionInfo.payload.settings.anticlockwise ?? "Default";
+				clockwise.dataset.savedValue = inActionInfo.payload.settings.clockwise ?? "Default";
+
+				populateAllProfiles();
 
 				if (inActionInfo.payload.controller == "Encoder") {
 					document.getElementById("encoder").style.display = "block";
@@ -31,6 +75,10 @@
 				}
 
 				update = () => {
+					profile.dataset.savedValue = profile.value;
+					anticlockwise.dataset.savedValue = anticlockwise.value;
+					clockwise.dataset.savedValue = clockwise.value;
+
 					websocket.send(
 						JSON.stringify({
 							event: "setSettings",
@@ -48,12 +96,12 @@
 				websocket.onmessage = (event) => {
 					const data = JSON.parse(event.data);
 					if (data.event == "sendToPropertyInspector" && data.payload.event == "updateDevices") {
-						const datalist = document.getElementById("devices");
-						datalist.innerHTML = "";
-						for (const device of data.payload.devices) {
-							const option = document.createElement("option");
-							option.value = device;
-							datalist.appendChild(option);
+						if (data.payload.devices) {
+							updateDeviceSelect(data.payload.devices);
+						}
+						if (data.payload.profiles) {
+							storedProfilesMap = data.payload.profiles;
+							populateAllProfiles();
 						}
 					}
 				};
@@ -64,21 +112,20 @@
 	<body>
 		<div class="sdpi-item">
 			<div class="sdpi-item-label">Device ID</div>
-			<input id="device" list="devices" type="text" oninput="update()" class="sdpi-item-value" />
-			<datalist id="devices"></datalist>
+			<select id="device" onchange="populateAllProfiles(); update();" class="sdpi-item-value select"></select>
 		</div>
 		<div class="sdpi-item">
 			<div class="sdpi-item-label" id="up-label">Profile</div>
-			<input id="profile" oninput="update()" class="sdpi-item-value" />
+			<select id="profile" onchange="update()" class="sdpi-item-value select"></select>
 		</div>
 		<div id="encoder" style="display: none">
 			<div class="sdpi-item">
 				<div class="sdpi-item-label">Dial rotate anticlockwise</div>
-				<input id="anticlockwise" oninput="update()" class="sdpi-item-value" />
+				<select id="anticlockwise" onchange="update()" class="sdpi-item-value select"></select>
 			</div>
 			<div class="sdpi-item">
 				<div class="sdpi-item-label">Dial rotate clockwise</div>
-				<input id="clockwise" oninput="update()" class="sdpi-item-value" />
+				<select id="clockwise" onchange="update()" class="sdpi-item-value select"></select>
 			</div>
 		</div>
 	</body>

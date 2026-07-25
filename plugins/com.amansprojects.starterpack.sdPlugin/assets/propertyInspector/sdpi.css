@@ -67,7 +67,14 @@ select {
 	-moz-appearance: none;
 	-o-appearance: none;
 	appearance: none;
-	background: url(../assets/caret.svg) no-repeat 97% center;
+	background-image: url("caret.svg");
+	background-repeat: no-repeat;
+	background-position: right 8px center;
+	padding-right: 24px;
+	padding-left: 8px;
+	height: 28px;
+	line-height: 28px;
+	cursor: pointer;
 }
 
 input[type="button"],
